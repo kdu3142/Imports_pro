@@ -170,6 +170,10 @@ const initialEntries: ImportEntry[] = [
 ];
 
 const statusOptions: ImportEntry["status"][] = ["A comprar", "Comprado", "Em trânsito", "Entregue"];
+const normalizeStatus = (raw?: string): ImportEntry["status"] => {
+  if (raw === "Pedido") return "A comprar"; // migrate legacy status label
+  return statusOptions.includes(raw as ImportEntry["status"]) ? (raw as ImportEntry["status"]) : "A comprar";
+};
 
 function normalizeProject(project: StoredProject): Project {
   const conversionRate =
@@ -231,7 +235,7 @@ function normalizeProject(project: StoredProject): Project {
         shipping,
         salePrice: computedSale,
         paid: Boolean(entry?.paid),
-        status: entry?.status === "Pedido" ? "A comprar" : (entry?.status as ImportEntry["status"]) || "A comprar",
+        status: normalizeStatus(entry?.status as string | undefined),
         eta: entry?.eta || "—",
         invoice: entry?.invoice || "",
         note: entry?.note || "",
@@ -278,7 +282,7 @@ function emptyDraft(config: Config = defaultConfig): DraftEntry {
     iofPercent: String(config.defaultIOFPercent),
     taxPercent: String(config.defaultTaxPercent),
     shipping: String(displayShipping),
-    status: "Pedido",
+    status: statusOptions[0],
     paid: false,
     eta: "",
     invoice: "",
