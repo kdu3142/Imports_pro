@@ -823,7 +823,42 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
+    <>
+      <header
+        className="sticky left-0 right-0 top-0 z-50 border-b border-border/70 bg-background/90 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-6"
+        style={{ top: "env(safe-area-inset-top, 0px)" }}
+      >
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-foreground">Controle de importações</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              Troque a moeda a qualquer momento.
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+              1 JPY = {currencyBRL.format(config.conversionRate || defaultConfig.conversionRate)}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={config.currencyMode === "BRL" ? "primary" : "outline"}
+                onClick={() => handleCurrencyModeChange("BRL")}
+              >
+                BRL
+              </Button>
+              <Button
+                type="button"
+                variant={config.currencyMode === "JPY" ? "primary" : "outline"}
+                onClick={() => handleCurrencyModeChange("JPY")}
+              >
+                JPY
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 pt-10 pb-12">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1625,5 +1660,6 @@ export default function Home() {
         </Card>
       </div>
     </main>
+    </>
   );
 }
