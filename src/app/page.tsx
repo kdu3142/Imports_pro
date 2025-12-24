@@ -211,8 +211,7 @@ function normalizeProject(project: StoredProject): Project {
 }
 
 function totalCost(entry: ImportEntry) {
-  const taxValue = (entry.taxPercent / 100) * entry.basePrice;
-  return entry.basePrice + entry.iof + taxValue + entry.shipping;
+  return entry.basePrice; // custo que você paga (produto)
 }
 
 function taxValue(entry: ImportEntry) {
@@ -220,7 +219,7 @@ function taxValue(entry: ImportEntry) {
 }
 
 function profit(entry: ImportEntry) {
-  return entry.salePrice - totalCost(entry);
+  return entry.salePrice - entry.basePrice; // você embolsa IOF + taxa + frete
 }
 
 function margin(entry: ImportEntry) {
@@ -507,9 +506,10 @@ export default function Home() {
       entries.reduce(
         (acc, entry) => {
           const cost = totalCost(entry);
+          const fees = profit(entry);
           acc.invested += cost;
           acc.revenue += entry.salePrice;
-          acc.profit += profit(entry);
+          acc.profit += fees;
           acc.taxes += entry.iof + taxValue(entry);
           acc.paidAmount += entry.paid ? cost : 0;
           return acc;
@@ -546,8 +546,8 @@ export default function Home() {
   const draftTaxPercent = Number(draft.taxPercent || config.defaultTaxPercent || 0);
   const draftTaxValueBRL = (draftTaxPercent / 100) * draftBaseBRL;
   const draftShippingBRL = toBRL(draft.shipping);
-  const previewCostBRL = draftBaseBRL + draftIofBRL + draftTaxValueBRL + draftShippingBRL;
-  const previewSalePriceBRL = previewCostBRL;
+  const previewCostBRL = draftBaseBRL;
+  const previewSalePriceBRL = draftBaseBRL + draftIofBRL + draftTaxValueBRL + draftShippingBRL;
   const paidCount = entries.filter((entry) => entry.paid).length;
   const recipientCount = useMemo(
     () => new Set(entries.map((entry) => entry.recipient || "Sem destinatário")).size,
@@ -578,7 +578,11 @@ export default function Home() {
   const calculateDefaultIof = (base: string) => {
     const baseNumber = Number(base || 0);
     if (!baseNumber) return "";
-    return ((baseNumber * config.defaultIOFPercent) / 100).toFixed(2);
+    const rate = config.conversionRate || defaultConfig.conversionRate;
+    const baseBRL = config.currencyMode === "JPY" ? baseNumber * rate : baseNumber;
+    const iofBRL = (baseBRL * config.defaultIOFPercent) / 100;
+    const displayValue = config.currencyMode === "JPY" ? iofBRL / rate : iofBRL;
+    return displayValue.toFixed(2);
   };
 
   const handleTogglePaid = (id: string) => {
@@ -717,11 +721,55 @@ export default function Home() {
   }, [hydrated, draft.taxPercent, config.defaultTaxPercent]);
 
   useEffect(() => {
+    if (!hydrated || draft.iofTouched) return;
+    if (!draft.basePrice) return;
+    const autoIof = calculateDefaultIof(draft.basePrice);
+    if (draft.iof === autoIof) return;
+    setDraft((prev) => ({ ...prev, iof: autoIof }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    hydrated,
+    draft.basePrice,
+    draft.iof,
+    draft.iofTouched,
+    config.defaultIOFPercent,
+    config.currencyMode,
+    config.conversionRate,
+  ]);
+
+  useEffect(() => {
     if (editingId) return;
     if (!draft.shipping || !draftShippingInOptions) {
       setDraft((prev) => ({ ...prev, shipping: String(shippingOptionsDisplay[0] ?? 0) }));
     }
   }, [draft.shipping, draftShippingInOptions, shippingOptionsDisplay, editingId]);
+
+  useEffect(() => {
+    if (!hydrated || !dirty || !currentProjectId || isSaving || isLoadingProjects) return;
+    const timeout = setTimeout(async () => {
+      const normalizedConfig = normalizeConfigDraft(configDraft);
+      setConfig(normalizedConfig);
+      const updated = projects.map((project) =>
+        project.id === currentProjectId ? { ...project, entries, config: normalizedConfig, notes, filters } : project,
+      );
+      await saveProjectsToDb(updated);
+    }, 800);
+
+    return () => clearTimeout(timeout);
+  }, [
+    hydrated,
+    dirty,
+    currentProjectId,
+    isSaving,
+    isLoadingProjects,
+    configDraft,
+    projects,
+    entries,
+    notes,
+    filters,
+    saveProjectsToDb,
+    setConfig,
+  ]);
 
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
@@ -841,20 +889,20 @@ export default function Home() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
-            <div>
-              <CardDescription>Custo total importado</CardDescription>
-              <CardTitle className="text-2xl">{formatAmount(totals.invested)}</CardTitle>
-            </div>
-            <Badge variant="outline">{paidCount} pagos</Badge>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            {formatAmount(totals.paidAmount)} já liquidado, resto pendente.
-          </CardContent>
-        </Card>
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
+              <div>
+                <CardDescription>Investimento (produto)</CardDescription>
+                <CardTitle className="text-2xl">{formatAmount(totals.invested)}</CardTitle>
+              </div>
+              <Badge variant="outline">{paidCount} pagos</Badge>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              {formatAmount(totals.paidAmount)} já liquidado, resto pendente.
+            </CardContent>
+          </Card>
         <Card>
           <CardHeader className="space-y-2 pb-4">
-            <CardDescription>Receita estimada</CardDescription>
+                <CardDescription>Receita estimada (cliente)</CardDescription>
             <CardTitle className="text-2xl">{formatAmount(totals.revenue)}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
@@ -863,13 +911,13 @@ export default function Home() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="space-y-2 pb-4">
-            <CardDescription>Impostos e taxas</CardDescription>
-            <CardTitle className="text-2xl">{formatAmount(totals.taxes)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            IOF + taxas alfandegárias concentradas neste valor.
-          </CardContent>
+            <CardHeader className="space-y-2 pb-4">
+              <CardDescription>Impostos e taxas</CardDescription>
+              <CardTitle className="text-2xl">{formatAmount(totals.taxes)}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              IOF + taxa percentual cobrados ao cliente.
+            </CardContent>
         </Card>
         <Card>
           <CardHeader className="space-y-2 pb-4">
@@ -984,8 +1032,10 @@ export default function Home() {
                   <TableCell>
                     <div className="text-sm font-medium">{formatAmount(totalCost(entry))}</div>
                     <div className="text-xs text-muted-foreground">
-                      Base {formatAmount(entry.basePrice)} · IOF {formatAmount(entry.iof)} · Taxa{" "}
-                      {formatAmount(taxValue(entry))} ({entry.taxPercent}%) · Frete {formatAmount(entry.shipping)}
+                      Você paga: {formatAmount(entry.basePrice)} · Cliente paga: {formatAmount(entry.salePrice)}
+                      <br />
+                      IOF {formatAmount(entry.iof)} · Taxa {formatAmount(taxValue(entry))} ({entry.taxPercent}%) · Frete{" "}
+                      {formatAmount(entry.shipping)}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -1038,10 +1088,12 @@ export default function Home() {
             <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
               <span>Total de linhas: {filteredEntries.length}</span>
               <span>
-                Soma dos custos: {formatAmount(filteredEntries.reduce((sum, entry) => sum + totalCost(entry), 0))}
+                Investimento (produtos):{" "}
+                {formatAmount(filteredEntries.reduce((sum, entry) => sum + totalCost(entry), 0))}
               </span>
               <span>
-                Lucro filtrado: {formatAmount(filteredEntries.reduce((sum, entry) => sum + profit(entry), 0))}
+                Você embolsa (IOF + taxa + frete):{" "}
+                {formatAmount(filteredEntries.reduce((sum, entry) => sum + profit(entry), 0))}
               </span>
             </div>
           )}
@@ -1111,23 +1163,23 @@ export default function Home() {
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
-                <div className="text-xs text-muted-foreground">Custo final</div>
+                <div className="text-xs text-muted-foreground">Custo (você paga)</div>
                 <div className="text-xl font-semibold">{formatAmount(previewCostBRL)}</div>
-                <div className="text-xs text-muted-foreground">
-                  Inclui IOF, taxa percentual aplicada e frete configurado.
-                </div>
+                <div className="text-xs text-muted-foreground">Preço do produto.</div>
               </div>
               <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
-                <div className="text-xs text-muted-foreground">Preço de venda (auto)</div>
+                <div className="text-xs text-muted-foreground">Preço ao cliente (auto)</div>
                 <div className="text-xl font-semibold">{formatAmount(previewSalePriceBRL)}</div>
-                <div className="text-xs text-muted-foreground">Gerado a partir do custo total.</div>
+                <div className="text-xs text-muted-foreground">
+                  Base + IOF + taxa (%) + frete que você repassa para o cliente.
+                </div>
               </div>
               <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
-                <div className="text-xs text-muted-foreground">Ponto de equilíbrio</div>
+                <div className="text-xs text-muted-foreground">Você embolsa</div>
                 <div className="text-xl font-semibold">
-                  {formatAmount(previewCostBRL > 0 ? previewCostBRL : 0)}
+                  {formatAmount(previewSalePriceBRL - previewCostBRL)}
                 </div>
-                <div className="text-xs text-muted-foreground">Venda mínima para zerar o custo.</div>
+                <div className="text-xs text-muted-foreground">IOF + taxa + frete.</div>
               </div>
             </div>
             <div>
@@ -1288,18 +1340,18 @@ export default function Home() {
                   </div>
                   <div>
                     <Label>Pago?</Label>
-                    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
-                      <Switch
-                        checked={draft.paid}
-                        onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, paid: checked }))}
-                      />
-                      <span className="text-sm text-muted-foreground">{draft.paid ? "Sim" : "Não"}</span>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                    Preço de venda é calculado automaticamente: base + IOF + taxa (%) + frete.
-                  </div>
+                <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
+                  <Switch
+                    checked={draft.paid}
+                    onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, paid: checked }))}
+                  />
+                  <span className="text-sm text-muted-foreground">{draft.paid ? "Sim" : "Não"}</span>
                 </div>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                Preço de venda é calculado automaticamente: base + IOF + taxa (%) + frete (o que você embolsa).
+              </div>
+            </div>
               </div>
               <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
