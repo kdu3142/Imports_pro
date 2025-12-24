@@ -1,0 +1,123 @@
+[
+  {
+    "id": "PRJ-1766553863901",
+    "name": "Japão",
+    "entries": [
+      {
+        "id": "IMP-98027",
+        "description": "jshdfiu",
+        "recipient": "Sem destinatário",
+        "supplier": "",
+        "status": "Pedido",
+        "paid": false,
+        "eta": "—",
+        "invoice": "—",
+        "basePrice": 64,
+        "iof": 2.24,
+        "taxPercent": 15,
+        "shipping": 0,
+        "salePrice": 75.83999999999999
+      },
+      {
+        "id": "IMP-84109",
+        "description": "dfdsaf",
+        "recipient": "Sem destinatário",
+        "supplier": "",
+        "status": "Pedido",
+        "paid": false,
+        "eta": "—",
+        "invoice": "—",
+        "basePrice": 100,
+        "iof": 3.5,
+        "taxPercent": 15,
+        "shipping": 0,
+        "salePrice": 118.5
+      }
+    ],
+    "config": {
+      "defaultIOFPercent": 3.5,
+      "defaultTaxPercent": 15,
+      "shippingTiers": [
+        0,
+        150,
+        300
+      ],
+      "conversionRate": 0.034,
+      "currencyMode": "BRL"
+    },
+    "notes": "",
+    "filters": {
+      "search": "",
+      "status": "todas",
+      "paid": "todos"
+    }
+  },
+  {
+    "id": "PRJ-0001",
+    "name": "Projeto inicial",
+    "entries": [
+      {
+        "id": "IMP-1201",
+        "description": "MacBook Air M2 13\"",
+        "recipient": "Equipe TI",
+        "supplier": "Apple US",
+        "basePrice": 5200,
+        "iof": 312,
+        "taxPercent": 8,
+        "shipping": 300,
+        "salePrice": 6228,
+        "paid": true,
+        "status": "Em trânsito",
+        "eta": "12/01",
+        "invoice": "INV-9821"
+      },
+      {
+        "id": "IMP-1202",
+        "description": "Headphone Sony WH-1000XM5",
+        "recipient": "João Lima",
+        "supplier": "BestBuy",
+        "basePrice": 1800,
+        "iof": 108,
+        "taxPercent": 6,
+        "shipping": 150,
+        "salePrice": 2166,
+        "paid": false,
+        "status": "Pedido",
+        "eta": "16/01",
+        "invoice": "INV-7743"
+      },
+      {
+        "id": "IMP-1203",
+        "description": "Tênis New Balance 990v5",
+        "recipient": "Cliente VIP",
+        "supplier": "StockX",
+        "basePrice": 950,
+        "iof": 57,
+        "taxPercent": 5,
+        "shipping": 120,
+        "salePrice": 1174.5,
+        "paid": true,
+        "status": "Entregue",
+        "eta": "08/01",
+        "invoice": "INV-6621"
+      }
+    ],
+    "config": {
+      "defaultIOFPercent": 3.5,
+      "defaultTaxPercent": 8,
+      "shippingTiers": [
+        0,
+        150,
+        300
+      ],
+      "conversionRate": 0.034,
+      "currencyMode": "BRL"
+    },
+    "notes": "",
+    "filters": {
+      "search": "",
+      "status": "todas",
+      "paid": "todos"
+    }
+  }
+]
