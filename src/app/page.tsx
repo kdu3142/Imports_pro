@@ -311,6 +311,7 @@ export default function Home() {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [showSimulation, setShowSimulation] = useState(false);
+  const [hasRemoteUpdate, setHasRemoteUpdate] = useState(false);
 
   const saveProjectsToDb = useCallback(
     async (payload: Project[], shouldMarkSaved = true) => {
@@ -512,20 +513,34 @@ export default function Home() {
     setDirty(true);
   };
 
-  const handleReloadFromStorage = async () => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = await readProjects<StoredProject>();
-      if (!stored.length) return;
-      const normalized = stored.map((project) => normalizeProject(project));
-      setProjects(normalized);
-      const current = normalized.find((project) => project.id === currentProjectId) || normalized[0];
-      if (current) applyProject(current);
-      setDirty(false);
-      setLastSavedAt(new Date().toLocaleString("pt-BR"));
-    } catch (error) {
-      console.error("Erro ao recarregar dados salvos", error);
-    }
+  const reloadProjectsFromStorage = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (typeof window === "undefined") return;
+      if (!options?.force && (dirty || isSaving || isLoadingProjects || !hydrated)) {
+        if (hydrated && (dirty || isSaving)) {
+          setHasRemoteUpdate(true);
+        }
+        return;
+      }
+      try {
+        const stored = await readProjects<StoredProject>();
+        if (!stored.length) return;
+        const normalized = stored.map((project) => normalizeProject(project));
+        setProjects(normalized);
+        const current = normalized.find((project) => project.id === currentProjectId) || normalized[0];
+        if (current) applyProject(current);
+        setDirty(false);
+        setHasRemoteUpdate(false);
+        setLastSavedAt(new Date().toLocaleString("pt-BR"));
+      } catch (error) {
+        console.error("Erro ao recarregar dados salvos", error);
+      }
+    },
+    [applyProject, currentProjectId, dirty, hydrated, isLoadingProjects, isSaving],
+  );
+
+  const handleReloadFromStorage = () => {
+    void reloadProjectsFromStorage({ force: true });
   };
 
   const filteredEntries = useMemo(() => {
@@ -824,6 +839,18 @@ export default function Home() {
     setConfig,
   ]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const source = new EventSource("/api/projects/stream");
+    const handleUpdate = () => {
+      void reloadProjectsFromStorage();
+    };
+    source.addEventListener("projects-updated", handleUpdate);
+    return () => {
+      source.close();
+    };
+  }, [reloadProjectsFromStorage]);
+
   if (!hydrated || isLoadingProjects) {
     return (
       <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
@@ -937,6 +964,7 @@ export default function Home() {
               ) : (
                 <Badge variant="outline">Dados salvos no IndexedDB</Badge>
               )}
+              {hasRemoteUpdate && dirty ? <Badge variant="warning">Atualização remota disponível</Badge> : null}
               {lastSavedAt && <span>Último salvamento: {lastSavedAt}</span>}
               <span className="rounded-full bg-muted px-2 py-1">Persistência local no navegador</span>
             </div>

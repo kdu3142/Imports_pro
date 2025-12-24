@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import { notifyProjectsUpdated } from "@/lib/projectEvents";
 
 const dataDir = path.join(process.cwd(), ".local");
 const dataFile = path.join(dataDir, "projects.json");
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
     }
     await ensureFile();
     await fs.writeFile(dataFile, JSON.stringify(body, null, 2), "utf-8");
+    notifyProjectsUpdated();
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Erro ao salvar arquivo de projetos", error);
