@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    volumes:
+      - projects_data:/app/.local
+    restart: unless-stopped
+
+volumes:
+  projects_data:
+    driver: local

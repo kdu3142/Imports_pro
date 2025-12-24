@@ -18,6 +18,12 @@ PATH="$PWD/.local/node-v20.11.1-darwin-arm64/bin:$PATH" npm run dev
 ```
 4) Abra http://localhost:3000.
 
+## Rodar com Docker
+- Build e suba os containers (produção): `docker compose up --build -d`
+- Acesse: http://localhost:3000 (ajuste a porta editando `PORT` em `docker-compose.yml`).
+- Dados persistem em um volume nomeado `projects_data` montado em `/app/.local` (contém `projects.json`).
+- Para parar e liberar containers: `docker compose down` (o volume continua salvo; use `docker volume rm imports_proj_projects_data` se quiser remover).
+
 ## Fluxo rápido
 - **Projetos**: selecione um existente ou crie um novo (nome livre). Tudo (linhas, filtros, notas, config) fica salvo por projeto.
 - **Salvar**: clique em “Salvar projeto” quando aparecer “Alterações não salvas”. Persistência via `localStorage` do navegador.
@@ -36,4 +42,3 @@ PATH="$PWD/.local/node-v20.11.1-darwin-arm64/bin:$PATH" npm run dev
 ## Stack
 - Next.js (App Router) + React + TypeScript
 - Tailwind CSS v4 + UI inspirada no shadcn/ui (componentes locais em `src/components/ui/`)
-

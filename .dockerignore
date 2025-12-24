@@ -1,0 +1,12 @@
+.next
+.git
+.local
+node_modules
+npm-debug.log*
+pnpm-lock.yaml
+tmp
+Dockerfile
+docker-compose.yml
+.DS_Store
+coverage
+*.log

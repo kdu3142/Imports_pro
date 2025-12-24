@@ -18,6 +18,7 @@ type ImportEntry = {
   recipient: string;
   supplier: string;
   basePrice: number;
+  taxFree: boolean;
   iof: number;
   iofPercent: number;
   taxPercent: number;
@@ -44,6 +45,7 @@ type DraftEntry = {
   invoice: string;
   iofTouched: boolean;
   note: string;
+  taxFree: boolean;
 };
 
 type Filters = {
@@ -117,6 +119,7 @@ const initialEntries: ImportEntry[] = [
     recipient: "Equipe TI",
     supplier: "Apple US",
     basePrice: 5200,
+    taxFree: false,
     iof: 312,
     iofPercent: 6,
     taxPercent: 8,
@@ -134,6 +137,7 @@ const initialEntries: ImportEntry[] = [
     recipient: "João Lima",
     supplier: "BestBuy",
     basePrice: 1800,
+    taxFree: false,
     iof: 108,
     iofPercent: 6,
     taxPercent: 6,
@@ -151,6 +155,7 @@ const initialEntries: ImportEntry[] = [
     recipient: "Cliente VIP",
     supplier: "StockX",
     basePrice: 950,
+    taxFree: false,
     iof: 57,
     iofPercent: 6,
     taxPercent: 5,
@@ -197,6 +202,7 @@ function normalizeProject(project: StoredProject): Project {
     name: project.name || "Projeto sem nome",
     entries: (project.entries || []).map((entry, index) => {
       const basePrice = Number(entry?.basePrice ?? 0);
+      const taxFree = Boolean(entry?.taxFree);
       const iof = Number(entry?.iof ?? 0);
       const iofPercent =
         entry && "iofPercent" in entry
@@ -216,6 +222,7 @@ function normalizeProject(project: StoredProject): Project {
         recipient: entry?.recipient || "",
         supplier: entry?.supplier || "",
         basePrice,
+        taxFree,
         iof,
         iofPercent,
         taxPercent,
@@ -235,7 +242,8 @@ function normalizeProject(project: StoredProject): Project {
 }
 
 function totalCost(entry: ImportEntry) {
-  return entry.basePrice; // custo que você paga (produto)
+  const discountMultiplier = entry.taxFree ? 0.9 : 1;
+  return entry.basePrice * discountMultiplier; // custo que você paga (produto)
 }
 
 function taxValue(entry: ImportEntry) {
@@ -243,7 +251,7 @@ function taxValue(entry: ImportEntry) {
 }
 
 function profit(entry: ImportEntry) {
-  return entry.salePrice - entry.basePrice; // você embolsa IOF + taxa + frete
+  return entry.salePrice - totalCost(entry); // você embolsa IOF + taxa + frete + desconto tax-free
 }
 
 function margin(entry: ImportEntry) {
@@ -274,6 +282,7 @@ function emptyDraft(config: Config = defaultConfig): DraftEntry {
     invoice: "",
     iofTouched: false,
     note: "",
+    taxFree: false,
   };
 }
 
@@ -571,7 +580,8 @@ export default function Home() {
   const draftTaxPercent = Number(draft.taxPercent || config.defaultTaxPercent || 0);
   const draftTaxValueBRL = (draftTaxPercent / 100) * draftBaseBRL;
   const draftShippingBRL = toBRL(draft.shipping);
-  const previewCostBRL = draftBaseBRL;
+  const draftTaxFreeDiscountBRL = draft.taxFree ? 0.1 * draftBaseBRL : 0;
+  const previewCostBRL = draftBaseBRL - draftTaxFreeDiscountBRL;
   const previewSalePriceBRL = draftBaseBRL + draftIofBRL + draftTaxValueBRL + draftShippingBRL;
   const paidCount = entries.filter((entry) => entry.paid).length;
   const recipientCount = useMemo(
@@ -624,6 +634,7 @@ export default function Home() {
       "Preço final (auto)",
       "Lucro",
       "Margem",
+      "Tax-free",
       "Status",
       "Pago",
     ];
@@ -642,6 +653,7 @@ export default function Home() {
       entry.salePrice,
       profit(entry),
       `${(margin(entry) * 100).toFixed(1)}%`,
+      entry.taxFree ? "Sim" : "Não",
       entry.status,
       entry.paid ? "Sim" : "Não",
     ]);
@@ -685,6 +697,7 @@ export default function Home() {
       invoice: draft.invoice.trim() || "—",
       note: notes.trim() || draft.note.trim(),
       basePrice: numbers.basePrice,
+      taxFree: draft.taxFree,
       iof: iofValue,
       iofPercent: numbers.iofPercent,
       taxPercent: numbers.taxPercent,
@@ -719,6 +732,7 @@ export default function Home() {
       invoice: entry.invoice,
       iofTouched: true,
       note: entry.note || "",
+      taxFree: entry.taxFree,
     });
     window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
   };
@@ -1057,6 +1071,12 @@ export default function Home() {
                   <TableCell>
                     <div className="font-medium text-foreground">{entry.description}</div>
                     <div className="text-xs text-muted-foreground">{entry.invoice}</div>
+                    {entry.taxFree ? (
+                      <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-muted px-2 py-1 text-[11px] text-foreground">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                        Tax-free (10% ganho)
+                      </div>
+                    ) : null}
                     {entry.note ? <div className="text-xs text-muted-foreground">Nota: {entry.note}</div> : null}
                   </TableCell>
                   <TableCell>
@@ -1070,8 +1090,17 @@ export default function Home() {
                   <TableCell>
                     <div className="text-sm font-medium">{formatAmount(totalCost(entry))}</div>
                     <div className="text-xs text-muted-foreground">
-                      Você paga: {formatAmount(entry.basePrice)} · Cliente paga: {formatAmount(entry.salePrice)}
-                      <br />
+                      Você paga: {formatAmount(totalCost(entry))} {entry.taxFree ? "(tax-free)" : ""} · Cliente paga:{" "}
+                      {formatAmount(entry.salePrice)}
+                      {entry.taxFree ? (
+                        <>
+                          <br />
+                          Preço cheio: {formatAmount(entry.basePrice)} · Ganho tax-free:{" "}
+                          {formatAmount(entry.basePrice - totalCost(entry))}
+                        </>
+                      ) : (
+                        <br />
+                      )}
                       IOF {formatAmount(entry.iof)} · Taxa {formatAmount(taxValue(entry))} ({entry.taxPercent}%) · Frete{" "}
                       {formatAmount(entry.shipping)}
                     </div>
@@ -1130,7 +1159,7 @@ export default function Home() {
                 {formatAmount(filteredEntries.reduce((sum, entry) => sum + totalCost(entry), 0))}
               </span>
               <span>
-                Você embolsa (IOF + taxa + frete):{" "}
+                Você embolsa (IOF + taxa + frete + desconto tax-free):{" "}
                 {formatAmount(filteredEntries.reduce((sum, entry) => sum + profit(entry), 0))}
               </span>
             </div>
@@ -1198,6 +1227,15 @@ export default function Home() {
                   )}
                 </Select>
               </div>
+              <div className="flex items-center gap-3 rounded-lg border border-border/70 bg-muted/40 p-3">
+                <Switch checked={draft.taxFree} onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, taxFree: checked }))} />
+                <div className="space-y-1">
+                  <div className="text-sm font-semibold text-foreground">Tax-free</div>
+                  <div className="text-[11px] leading-tight text-muted-foreground">
+                    10% de desconto no custo para você, mas o cliente paga o preço cheio do produto.
+                  </div>
+                </div>
+              </div>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <Button type="button" onClick={() => setShowSimulation(true)}>
@@ -1206,6 +1244,11 @@ export default function Home() {
                 {showSimulation && (
                   <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
                     <span>Base: {formatAmount(draftBaseBRL)}</span>
+                    {draft.taxFree ? (
+                      <span className="text-emerald-600">
+                        Tax-free: -{formatAmount(draftTaxFreeDiscountBRL)} no seu custo
+                      </span>
+                    ) : null}
                     <span>
                       IOF ({draftIofPercent || config.defaultIOFPercent}%): {formatAmount(draftIofBRL)}
                     </span>
@@ -1223,7 +1266,9 @@ export default function Home() {
               <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
                 <div className="text-xs text-muted-foreground">Custo (você paga)</div>
                 <div className="text-xl font-semibold">{formatAmount(previewCostBRL)}</div>
-                <div className="text-xs text-muted-foreground">Preço do produto.</div>
+                <div className="text-xs text-muted-foreground">
+                  {draft.taxFree ? "Preço do produto com 10% de desconto (tax-free)." : "Preço do produto."}
+                </div>
               </div>
               <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
                 <div className="text-xs text-muted-foreground">Preço ao cliente (auto)</div>
@@ -1397,6 +1442,18 @@ export default function Home() {
                     </Select>
                   </div>
                   <div>
+                    <Label>Tax-free</Label>
+                    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
+                      <Switch
+                        checked={draft.taxFree}
+                        onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, taxFree: checked }))}
+                      />
+                      <div className="text-sm text-muted-foreground">
+                        10% de desconto no custo; cliente paga o preço cheio.
+                      </div>
+                    </div>
+                  </div>
+                  <div>
                     <Label>Pago?</Label>
                     <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
                       <Switch
@@ -1407,7 +1464,8 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                    Preço de venda é calculado automaticamente: base + IOF + taxa (%) + frete (o que você embolsa).
+                    Preço de venda é calculado automaticamente: base + IOF + taxa (%) + frete. Se marcar tax-free, seu
+                    custo do produto cai 10% e vira lucro adicional.
                   </div>
                   <div className="sm:col-span-3">
                     <Label htmlFor="note">Nota do item (usa as notas rápidas se vazio)</Label>
@@ -1428,6 +1486,11 @@ export default function Home() {
                     final salvo:{" "}
                     <span className="font-semibold text-foreground">{formatAmount(previewSalePriceBRL)}</span>
                   </div>
+                  {draft.taxFree ? (
+                    <div className="text-xs text-emerald-600">
+                      Tax-free ativo: custo reduzido em {formatAmount(draftTaxFreeDiscountBRL)} (10% do preço base).
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                   {editingId && (
