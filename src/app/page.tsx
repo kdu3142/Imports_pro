@@ -19,13 +19,15 @@ type ImportEntry = {
   supplier: string;
   basePrice: number;
   iof: number;
+  iofPercent: number;
   taxPercent: number;
   shipping: number;
   salePrice: number;
   paid: boolean;
-  status: "Pedido" | "Em trânsito" | "Entregue";
+  status: "A comprar" | "Comprado" | "Em trânsito" | "Entregue";
   eta: string;
   invoice: string;
+  note?: string;
 };
 
 type DraftEntry = {
@@ -33,7 +35,7 @@ type DraftEntry = {
   recipient: string;
   supplier: string;
   basePrice: string;
-  iof: string;
+  iofPercent: string;
   taxPercent: string;
   shipping: string;
   status: ImportEntry["status"];
@@ -41,6 +43,7 @@ type DraftEntry = {
   eta: string;
   invoice: string;
   iofTouched: boolean;
+  note: string;
 };
 
 type Filters = {
@@ -82,12 +85,13 @@ type StoredProject = Partial<Project> & {
 
 const currencyBRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const currencyJPY = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
+const BASE_SHIPPING_TIERS_JPY: [number, number, number] = [1600, 2000, 3000];
 const defaultConfig: Config = {
   defaultIOFPercent: 3.5,
   defaultTaxPercent: 8,
-  shippingTiers: [0, 150, 300],
   conversionRate: 0.034, // 1 JPY -> BRL
-  currencyMode: "BRL",
+  currencyMode: "JPY",
+  shippingTiers: BASE_SHIPPING_TIERS_JPY.map((tier) => tier * 0.034) as [number, number, number], // armazenados em BRL, exibidos em JPY quando no modo JPY
 };
 const defaultFilters: Filters = { search: "", status: "todas", paid: "todos" };
 const configToDraft = (cfg: Config): ConfigDraft => {
@@ -114,6 +118,7 @@ const initialEntries: ImportEntry[] = [
     supplier: "Apple US",
     basePrice: 5200,
     iof: 312,
+    iofPercent: 6,
     taxPercent: 8,
     shipping: 300,
     salePrice: 6228,
@@ -121,6 +126,7 @@ const initialEntries: ImportEntry[] = [
     status: "Em trânsito",
     eta: "12/01",
     invoice: "INV-9821",
+    note: "",
   },
   {
     id: "IMP-1202",
@@ -129,13 +135,15 @@ const initialEntries: ImportEntry[] = [
     supplier: "BestBuy",
     basePrice: 1800,
     iof: 108,
+    iofPercent: 6,
     taxPercent: 6,
     shipping: 150,
     salePrice: 2166,
     paid: false,
-    status: "Pedido",
+    status: "A comprar",
     eta: "16/01",
     invoice: "INV-7743",
+    note: "",
   },
   {
     id: "IMP-1203",
@@ -144,6 +152,7 @@ const initialEntries: ImportEntry[] = [
     supplier: "StockX",
     basePrice: 950,
     iof: 57,
+    iofPercent: 6,
     taxPercent: 5,
     shipping: 120,
     salePrice: 1174.5,
@@ -151,10 +160,11 @@ const initialEntries: ImportEntry[] = [
     status: "Entregue",
     eta: "08/01",
     invoice: "INV-6621",
+    note: "",
   },
 ];
 
-const statusOptions: ImportEntry["status"][] = ["Pedido", "Em trânsito", "Entregue"];
+const statusOptions: ImportEntry["status"][] = ["A comprar", "Comprado", "Em trânsito", "Entregue"];
 
 function normalizeProject(project: StoredProject): Project {
   const normalizedConfig: Config = {
@@ -172,8 +182,14 @@ function normalizeProject(project: StoredProject): Project {
       project.config && "shippingTiers" in project.config && Array.isArray(project.config.shippingTiers)
         ? (project.config.shippingTiers as number[]).slice(0, 3).length === 3
           ? (project.config.shippingTiers as [number, number, number])
-          : defaultConfig.shippingTiers
-        : defaultConfig.shippingTiers,
+          : BASE_SHIPPING_TIERS_JPY.map(
+              (tier) =>
+                tier *
+                (project.config && "conversionRate" in project.config
+                  ? Number((project.config as Config).conversionRate || defaultConfig.conversionRate)
+                  : defaultConfig.conversionRate),
+            )
+        : BASE_SHIPPING_TIERS_JPY.map((tier) => tier * defaultConfig.conversionRate),
   };
 
   return {
@@ -182,6 +198,12 @@ function normalizeProject(project: StoredProject): Project {
     entries: (project.entries || []).map((entry, index) => {
       const basePrice = Number(entry?.basePrice ?? 0);
       const iof = Number(entry?.iof ?? 0);
+      const iofPercent =
+        entry && "iofPercent" in entry
+          ? Number((entry as ImportEntry).iofPercent ?? defaultConfig.defaultIOFPercent)
+          : basePrice
+            ? (iof / basePrice) * 100
+            : defaultConfig.defaultIOFPercent;
       const taxPercent = Number(
         entry && "taxPercent" in entry ? entry?.taxPercent ?? defaultConfig.defaultTaxPercent : defaultConfig.defaultTaxPercent,
       );
@@ -195,13 +217,15 @@ function normalizeProject(project: StoredProject): Project {
         supplier: entry?.supplier || "",
         basePrice,
         iof,
+        iofPercent,
         taxPercent,
         shipping,
         salePrice: computedSale,
         paid: Boolean(entry?.paid),
-        status: entry?.status || "Pedido",
+        status: entry?.status === "Pedido" ? "A comprar" : (entry?.status as ImportEntry["status"]) || "A comprar",
         eta: entry?.eta || "—",
         invoice: entry?.invoice || "",
+        note: entry?.note || "",
       };
     }),
     config: normalizedConfig,
@@ -241,7 +265,7 @@ function emptyDraft(config: Config = defaultConfig): DraftEntry {
     recipient: "",
     supplier: "",
     basePrice: "",
-    iof: "",
+    iofPercent: String(config.defaultIOFPercent),
     taxPercent: String(config.defaultTaxPercent),
     shipping: String(displayShipping),
     status: "Pedido",
@@ -249,6 +273,7 @@ function emptyDraft(config: Config = defaultConfig): DraftEntry {
     eta: "",
     invoice: "",
     iofTouched: false,
+    note: "",
   };
 }
 
@@ -268,6 +293,7 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [showSimulation, setShowSimulation] = useState(false);
 
   const saveProjectsToDb = useCallback(
     async (payload: Project[], shouldMarkSaved = true) => {
@@ -443,7 +469,6 @@ export default function Home() {
     setDraft((prev) => ({
       ...prev,
       basePrice: convertValue(prev.basePrice),
-      iof: convertValue(prev.iof),
       shipping: convertValue(prev.shipping),
     }));
     setDirty(true);
@@ -464,7 +489,6 @@ export default function Home() {
       setDraft((prev) => ({
         ...prev,
         basePrice: rescale(prev.basePrice),
-        iof: rescale(prev.iof),
         shipping: rescale(prev.shipping),
       }));
     }
@@ -542,7 +566,8 @@ export default function Home() {
   );
 
   const draftBaseBRL = toBRL(draft.basePrice);
-  const draftIofBRL = toBRL(draft.iof);
+  const draftIofPercent = Number(draft.iofPercent || config.defaultIOFPercent || 0);
+  const draftIofBRL = (draftIofPercent / 100) * draftBaseBRL;
   const draftTaxPercent = Number(draft.taxPercent || config.defaultTaxPercent || 0);
   const draftTaxValueBRL = (draftTaxPercent / 100) * draftBaseBRL;
   const draftShippingBRL = toBRL(draft.shipping);
@@ -575,14 +600,8 @@ export default function Home() {
     await saveProjectsToDb(updated);
   };
 
-  const calculateDefaultIof = (base: string) => {
-    const baseNumber = Number(base || 0);
-    if (!baseNumber) return "";
-    const rate = config.conversionRate || defaultConfig.conversionRate;
-    const baseBRL = config.currencyMode === "JPY" ? baseNumber * rate : baseNumber;
-    const iofBRL = (baseBRL * config.defaultIOFPercent) / 100;
-    const displayValue = config.currencyMode === "JPY" ? iofBRL / rate : iofBRL;
-    return displayValue.toFixed(2);
+  const calculateDefaultIof = () => {
+    return String(config.defaultIOFPercent || 0);
   };
 
   const handleTogglePaid = (id: string) => {
@@ -646,12 +665,14 @@ export default function Home() {
 
     const numbers = {
       basePrice: toBRL(draft.basePrice),
-      iof: toBRL(draft.iof),
+      iofPercent: Number(draft.iofPercent || config.defaultIOFPercent || 0),
       taxPercent: Number(draft.taxPercent || config.defaultTaxPercent || 0),
       shipping: toBRL(draft.shipping),
     };
 
-    const computedSalePrice = numbers.basePrice + numbers.iof + (numbers.taxPercent / 100) * numbers.basePrice + numbers.shipping;
+    const iofValue = (numbers.iofPercent / 100) * numbers.basePrice;
+    const taxValueCalc = (numbers.taxPercent / 100) * numbers.basePrice;
+    const computedSalePrice = numbers.basePrice + iofValue + taxValueCalc + numbers.shipping;
 
     const parsed: ImportEntry = {
       id: editingId || `IMP-${(Date.now() % 100000).toString().padStart(5, "0")}`,
@@ -662,7 +683,12 @@ export default function Home() {
       paid: draft.paid,
       eta: draft.eta.trim() || "—",
       invoice: draft.invoice.trim() || "—",
-      ...numbers,
+      note: notes.trim() || draft.note.trim(),
+      basePrice: numbers.basePrice,
+      iof: iofValue,
+      iofPercent: numbers.iofPercent,
+      taxPercent: numbers.taxPercent,
+      shipping: numbers.shipping,
       salePrice: computedSalePrice,
     };
 
@@ -684,7 +710,7 @@ export default function Home() {
       recipient: entry.recipient,
       supplier: entry.supplier,
       basePrice: String(fromBRL(entry.basePrice)),
-      iof: String(fromBRL(entry.iof)),
+      iofPercent: String(entry.iofPercent),
       taxPercent: String(entry.taxPercent),
       shipping: String(fromBRL(entry.shipping)),
       status: entry.status,
@@ -692,6 +718,7 @@ export default function Home() {
       eta: entry.eta,
       invoice: entry.invoice,
       iofTouched: true,
+      note: entry.note || "",
     });
     window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
   };
@@ -709,7 +736,7 @@ export default function Home() {
 
   useEffect(() => {
     if (hydrated && !draft.iofTouched) {
-      setDraft((prev) => ({ ...prev, iof: calculateDefaultIof(prev.basePrice) }));
+      setDraft((prev) => ({ ...prev, iofPercent: String(config.defaultIOFPercent) }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.defaultIOFPercent]);
@@ -723,14 +750,14 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated || draft.iofTouched) return;
     if (!draft.basePrice) return;
-    const autoIof = calculateDefaultIof(draft.basePrice);
-    if (draft.iof === autoIof) return;
-    setDraft((prev) => ({ ...prev, iof: autoIof }));
+    const autoIof = calculateDefaultIof();
+    if (draft.iofPercent === autoIof) return;
+    setDraft((prev) => ({ ...prev, iofPercent: autoIof }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hydrated,
     draft.basePrice,
-    draft.iof,
+    draft.iofPercent,
     draft.iofTouched,
     config.defaultIOFPercent,
     config.currencyMode,
@@ -770,6 +797,16 @@ export default function Home() {
     saveProjectsToDb,
     setConfig,
   ]);
+
+  if (!hydrated || isLoadingProjects) {
+    return (
+      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
+        <div className="rounded-xl border border-border/70 bg-muted/40 p-6 text-sm text-muted-foreground">
+          Carregando dados locais...
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
@@ -1020,6 +1057,7 @@ export default function Home() {
                   <TableCell>
                     <div className="font-medium text-foreground">{entry.description}</div>
                     <div className="text-xs text-muted-foreground">{entry.invoice}</div>
+                    {entry.note ? <div className="text-xs text-muted-foreground">Nota: {entry.note}</div> : null}
                   </TableCell>
                   <TableCell>
                     <div className="text-sm font-medium">{entry.recipient || "Sem destinatário"}</div>
@@ -1118,18 +1156,18 @@ export default function Home() {
                     setDraft((prev) => ({
                       ...prev,
                       basePrice: event.target.value,
-                      iof: prev.iofTouched ? prev.iof : calculateDefaultIof(event.target.value),
+                      iofPercent: prev.iofTouched ? prev.iofPercent : calculateDefaultIof(),
                     }))
                   }
                 />
               </div>
               <div>
-                <Label>IOF (valor)</Label>
+                <Label>IOF (%)</Label>
                 <Input
                   type="number"
                   placeholder="0,00"
-                  value={draft.iof}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, iof: event.target.value, iofTouched: true }))}
+                  value={draft.iofPercent}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, iofPercent: event.target.value, iofTouched: true }))}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   Padrão: {formatPercent(config.defaultIOFPercent)} do preço base.
@@ -1160,7 +1198,27 @@ export default function Home() {
                   )}
                 </Select>
               </div>
-            </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" onClick={() => setShowSimulation(true)}>
+                  Simular
+                </Button>
+                {showSimulation && (
+                  <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
+                    <span>Base: {formatAmount(draftBaseBRL)}</span>
+                    <span>
+                      IOF ({draftIofPercent || config.defaultIOFPercent}%): {formatAmount(draftIofBRL)}
+                    </span>
+                    <span>
+                      Taxa ({draftTaxPercent || config.defaultTaxPercent}%): {formatAmount(draftTaxValueBRL)}
+                    </span>
+                    <span>Frete: {formatAmount(draftShippingBRL)}</span>
+                    <span className="font-semibold text-foreground">
+                      Total: {formatAmount(previewSalePriceBRL)}
+                    </span>
+                  </div>
+                )}
+              </div>
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
                 <div className="text-xs text-muted-foreground">Custo (você paga)</div>
@@ -1285,21 +1343,21 @@ export default function Home() {
                         setDraft((prev) => ({
                           ...prev,
                           basePrice: event.target.value,
-                          iof: prev.iofTouched ? prev.iof : calculateDefaultIof(event.target.value),
+                          iofPercent: prev.iofTouched ? prev.iofPercent : calculateDefaultIof(),
                         }))
                       }
                       required
                     />
                   </div>
                   <div>
-                    <Label htmlFor="iof">IOF (valor)</Label>
+                    <Label htmlFor="iof">IOF (%)</Label>
                     <Input
                       id="iof"
                       type="number"
                       placeholder="0,00"
-                      value={draft.iof}
+                      value={draft.iofPercent}
                       onChange={(event) =>
-                        setDraft((prev) => ({ ...prev, iof: event.target.value, iofTouched: true }))
+                        setDraft((prev) => ({ ...prev, iofPercent: event.target.value, iofTouched: true }))
                       }
                     />
                     <p className="mt-1 text-[11px] text-muted-foreground">
@@ -1340,18 +1398,27 @@ export default function Home() {
                   </div>
                   <div>
                     <Label>Pago?</Label>
-                <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
-                  <Switch
-                    checked={draft.paid}
-                    onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, paid: checked }))}
-                  />
-                  <span className="text-sm text-muted-foreground">{draft.paid ? "Sim" : "Não"}</span>
+                    <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2">
+                      <Switch
+                        checked={draft.paid}
+                        onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, paid: checked }))}
+                      />
+                      <span className="text-sm text-muted-foreground">{draft.paid ? "Sim" : "Não"}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                    Preço de venda é calculado automaticamente: base + IOF + taxa (%) + frete (o que você embolsa).
+                  </div>
+                  <div className="sm:col-span-3">
+                    <Label htmlFor="note">Nota do item (usa as notas rápidas se vazio)</Label>
+                    <Textarea
+                      id="note"
+                      placeholder="Observações específicas deste item"
+                      value={draft.note || notes}
+                      onChange={(event) => setDraft((prev) => ({ ...prev, note: event.target.value }))}
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                Preço de venda é calculado automaticamente: base + IOF + taxa (%) + frete (o que você embolsa).
-              </div>
-            </div>
               </div>
               <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
