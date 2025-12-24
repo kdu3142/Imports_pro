@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+:root {
+  --background: 210 20% 98%;
+  --foreground: 222.2 47.4% 11.2%;
+  --muted: 214 32% 94%;
+  --muted-foreground: 215 16% 35%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 47.4% 11.2%;
+  --border: 214 30% 90%;
+  --input: 214 30% 90%;
+  --accent: 222 76% 55%;
+  --accent-foreground: 0 0% 100%;
+  --ring: 222 90% 55%;
+  --success: 142 70% 45%;
+  --warning: 43 96% 56%;
+  --destructive: 0 84% 60%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: 222.2 84% 4%;
+    --foreground: 210 40% 98%;
+    --muted: 217 32% 15%;
+    --muted-foreground: 214 20% 70%;
+    --card: 222.2 32% 8%;
+    --card-foreground: 210 40% 98%;
+    --border: 217 34% 17%;
+    --input: 217 34% 17%;
+    --accent: 210 90% 65%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --ring: 212 82% 65%;
+    --success: 142 70% 45%;
+    --warning: 43 96% 56%;
+    --destructive: 0 72% 60%;
+  }
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-ring: hsl(var(--ring));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-destructive: hsl(var(--destructive));
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  min-height: 100vh;
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(900px at 0% 0%, rgba(59, 130, 246, 0.08), transparent 35%),
+    radial-gradient(700px at 90% 10%, rgba(236, 72, 153, 0.08), transparent 40%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.02), rgba(15, 23, 42, 0));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
