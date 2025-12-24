@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,9 +42,33 @@ type DraftEntry = {
   paid: boolean;
   eta: string;
   invoice: string;
+  iofTouched: boolean;
 };
 
+type Filters = {
+  search: string;
+  status: "todas" | ImportEntry["status"];
+  paid: "todos" | "pagos" | "pendentes";
+  category: "todas" | string;
+};
+
+type Config = {
+  defaultIOFPercent: number;
+};
+
+type Project = {
+  id: string;
+  name: string;
+  entries: ImportEntry[];
+  config: Config;
+  notes: string;
+  filters: Filters;
+};
+
+const STORAGE_KEY = "import-tracker-projects-v1";
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const defaultConfig: Config = { defaultIOFPercent: 3.5 };
+const defaultFilters: Filters = { search: "", status: "todas", paid: "todos", category: "todas" };
 
 const initialEntries: ImportEntry[] = [
   {
@@ -112,16 +136,12 @@ function margin(entry: ImportEntry) {
   return profit(entry) / sale;
 }
 
-export default function Home() {
-  const [entries, setEntries] = useState<ImportEntry[]>(initialEntries);
-  const [filters, setFilters] = useState({
-    search: "",
-    status: "todas",
-    paid: "todos",
-    category: "todas",
-  });
-  const [notes, setNotes] = useState("");
-  const [draft, setDraft] = useState<DraftEntry>({
+function formatPercent(value: number) {
+  return `${value.toFixed(2)}%`;
+}
+
+function emptyDraft(): DraftEntry {
+  return {
     description: "",
     supplier: "",
     category: "Eletrônico",
@@ -135,7 +155,108 @@ export default function Home() {
     paid: false,
     eta: "",
     invoice: "",
-  });
+    iofTouched: false,
+  };
+}
+
+export default function Home() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [currentProjectId, setCurrentProjectId] = useState<string>("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [entries, setEntries] = useState<ImportEntry[]>(initialEntries);
+  const [filters, setFilters] = useState<Filters>(defaultFilters);
+  const [notes, setNotes] = useState("");
+  const [config, setConfig] = useState<Config>(defaultConfig);
+  const [draft, setDraft] = useState<DraftEntry>(emptyDraft());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const persistProjects = useCallback((payload: Project[]) => {
+    if (typeof window === "undefined") return;
+    setProjects(payload);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }, []);
+
+  const applyProject = useCallback((project: Project) => {
+    setCurrentProjectId(project.id);
+    setEntries(project.entries);
+    setNotes(project.notes);
+    setConfig(project.config || defaultConfig);
+    setFilters(project.filters || defaultFilters);
+    setDraft(emptyDraft());
+    setEditingId(null);
+    setDirty(false);
+  }, []);
+
+  useEffect(() => {
+    const load = () => {
+      if (typeof window === "undefined") return;
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        try {
+          const parsed: Project[] = JSON.parse(stored);
+          setProjects(parsed);
+          const first = parsed[0];
+          if (first) {
+            applyProject(first);
+          }
+          setHydrated(true);
+          return;
+        } catch (error) {
+          console.error("Erro ao carregar projetos salvos", error);
+        }
+      }
+      const defaultProject: Project = {
+        id: "PRJ-0001",
+        name: "Projeto inicial",
+        entries: initialEntries,
+        config: defaultConfig,
+        notes: "",
+        filters: defaultFilters,
+      };
+      setProjects([defaultProject]);
+      applyProject(defaultProject);
+      persistProjects([defaultProject]);
+      setHydrated(true);
+    };
+    load();
+  }, [applyProject, persistProjects]);
+
+  const handleSelectProject = (projectId: string) => {
+    const project = projects.find((item) => item.id === projectId);
+    if (project) {
+      applyProject(project);
+    }
+  };
+
+  const handleCreateProject = () => {
+    const name = newProjectName.trim() || `Projeto ${projects.length + 1}`;
+    const id = `PRJ-${Date.now()}`;
+    const project: Project = {
+      id,
+      name,
+      entries: [],
+      config,
+      notes: "",
+      filters: defaultFilters,
+    };
+    const updated = [project, ...projects];
+    persistProjects(updated);
+    applyProject(project);
+    setNewProjectName("");
+    setLastSavedAt(new Date().toLocaleString("pt-BR"));
+  };
+
+  const handleSaveProject = () => {
+    if (!currentProjectId) return;
+    const updated = projects.map((project) =>
+      project.id === currentProjectId ? { ...project, entries, config, notes, filters } : project,
+    );
+    persistProjects(updated);
+    setDirty(false);
+    setLastSavedAt(new Date().toLocaleString("pt-BR"));
+  };
 
   const filteredEntries = useMemo(() => {
     return entries.filter((entry) => {
@@ -176,10 +297,15 @@ export default function Home() {
   const previewProfit = Number(draft.salePrice || 0) - previewCost;
   const paidCount = entries.filter((entry) => entry.paid).length;
 
+  const calculateDefaultIof = (base: string) => {
+    const baseNumber = Number(base || 0);
+    if (!baseNumber) return "";
+    return ((baseNumber * config.defaultIOFPercent) / 100).toFixed(2);
+  };
+
   const handleTogglePaid = (id: string) => {
-    setEntries((prev) =>
-      prev.map((entry) => (entry.id === id ? { ...entry, paid: !entry.paid } : entry)),
-    );
+    setEntries((prev) => prev.map((entry) => (entry.id === id ? { ...entry, paid: !entry.paid } : entry)));
+    setDirty(true);
   };
 
   const handleExport = () => {
@@ -206,7 +332,7 @@ export default function Home() {
       entry.description,
       entry.supplier,
       entry.category,
-      totalCost(entry) - entry.iof - entry.duties - entry.shipping - entry.otherFees,
+      entry.basePrice,
       entry.iof,
       entry.duties,
       entry.shipping,
@@ -232,7 +358,7 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
-  const handleAddEntry = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleAddOrUpdateEntry = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const numbers = {
       basePrice: Number(draft.basePrice || 0),
@@ -243,8 +369,8 @@ export default function Home() {
       salePrice: Number(draft.salePrice || 0),
     };
 
-    const newEntry: ImportEntry = {
-      id: `IMP-${(Date.now() % 100000).toString().padStart(5, "0")}`,
+    const parsed: ImportEntry = {
+      id: editingId || `IMP-${(Date.now() % 100000).toString().padStart(5, "0")}`,
       description: draft.description || "Item sem nome",
       supplier: draft.supplier || "Fornecedor não informado",
       category: draft.category,
@@ -255,23 +381,44 @@ export default function Home() {
       ...numbers,
     };
 
-    setEntries((prev) => [newEntry, ...prev]);
-    setDraft({
-      description: "",
-      supplier: "",
-      category: "Eletrônico",
-      basePrice: "",
-      iof: "",
-      duties: "",
-      shipping: "",
-      otherFees: "",
-      salePrice: "",
-      status: "Pedido",
-      paid: false,
-      eta: "",
-      invoice: "",
+    setEntries((prev) => {
+      if (editingId) {
+        return prev.map((item) => (item.id === editingId ? parsed : item));
+      }
+      return [parsed, ...prev];
     });
+    setDraft(emptyDraft());
+    setEditingId(null);
+    setDirty(true);
   };
+
+  const handleEditRow = (entry: ImportEntry) => {
+    setEditingId(entry.id);
+    setDraft({
+      description: entry.description,
+      supplier: entry.supplier,
+      category: entry.category,
+      basePrice: String(entry.basePrice),
+      iof: String(entry.iof),
+      duties: String(entry.duties),
+      shipping: String(entry.shipping),
+      otherFees: String(entry.otherFees),
+      salePrice: String(entry.salePrice),
+      status: entry.status,
+      paid: entry.paid,
+      eta: entry.eta,
+      invoice: entry.invoice,
+      iofTouched: true,
+    });
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    if (hydrated && !draft.iofTouched) {
+      setDraft((prev) => ({ ...prev, iof: calculateDefaultIof(prev.basePrice) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.defaultIOFPercent]);
 
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
@@ -306,6 +453,58 @@ export default function Home() {
         </div>
       </div>
 
+      <Card>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <CardTitle>Projetos</CardTitle>
+            <CardDescription>Salve e carregue conjuntos diferentes de itens, notas e configurações.</CardDescription>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {dirty ? (
+                <Badge variant="warning">Alterações não salvas</Badge>
+              ) : (
+                <Badge variant="outline">Tudo salvo</Badge>
+              )}
+              {lastSavedAt && <span>Último salvamento: {lastSavedAt}</span>}
+            </div>
+          </div>
+          <div className="grid w-full gap-3 md:w-auto md:grid-cols-[1fr_auto] md:items-end">
+            <div className="grid gap-2 sm:grid-cols-2 sm:items-end">
+              <div>
+                <Label htmlFor="project">Projeto atual</Label>
+                <Select
+                  id="project"
+                  value={currentProjectId}
+                  onChange={(event) => handleSelectProject(event.target.value)}
+                >
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="newProject">Novo projeto</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="newProject"
+                    placeholder="Nome do projeto"
+                    value={newProjectName}
+                    onChange={(event) => setNewProjectName(event.target.value)}
+                  />
+                  <Button variant="outline" type="button" onClick={handleCreateProject}>
+                    Criar
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <Button className="w-full md:w-auto" type="button" onClick={handleSaveProject} disabled={!dirty}>
+              Salvar projeto
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
@@ -325,8 +524,8 @@ export default function Home() {
             <CardTitle className="text-2xl">{currency.format(totals.revenue)}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Lucro previsto: {currency.format(totals.profit)} ({totals.revenue ? ((totals.profit / totals.revenue) * 100).toFixed(1) : "0"}
-            %).
+            Lucro previsto: {currency.format(totals.profit)} (
+            {totals.revenue ? ((totals.profit / totals.revenue) * 100).toFixed(1) : "0"}%).
           </CardContent>
         </Card>
         <Card>
@@ -364,7 +563,10 @@ export default function Home() {
                 id="search"
                 placeholder="AirPods, INV-1001, fornecedor..."
                 value={filters.search}
-                onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
+                onChange={(event) => {
+                  setFilters((prev) => ({ ...prev, search: event.target.value }));
+                  setDirty(true);
+                }}
               />
             </div>
             <div>
@@ -372,7 +574,10 @@ export default function Home() {
               <Select
                 id="status"
                 value={filters.status}
-                onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
+                onChange={(event) => {
+                  setFilters((prev) => ({ ...prev, status: event.target.value as Filters["status"] }));
+                  setDirty(true);
+                }}
               >
                 <option value="todas">Todas</option>
                 {statusOptions.map((option) => (
@@ -387,7 +592,10 @@ export default function Home() {
               <Select
                 id="paid"
                 value={filters.paid}
-                onChange={(event) => setFilters((prev) => ({ ...prev, paid: event.target.value }))}
+                onChange={(event) => {
+                  setFilters((prev) => ({ ...prev, paid: event.target.value as Filters["paid"] }));
+                  setDirty(true);
+                }}
               >
                 <option value="todos">Todos</option>
                 <option value="pagos">Pagos</option>
@@ -399,7 +607,10 @@ export default function Home() {
               <Select
                 id="category"
                 value={filters.category}
-                onChange={(event) => setFilters((prev) => ({ ...prev, category: event.target.value }))}
+                onChange={(event) => {
+                  setFilters((prev) => ({ ...prev, category: event.target.value }));
+                  setDirty(true);
+                }}
               >
                 <option value="todas">Todas</option>
                 {[...new Set(entries.map((entry) => entry.category))].map((category) => (
@@ -413,14 +624,10 @@ export default function Home() {
               <Button
                 variant="ghost"
                 className="w-full"
-                onClick={() =>
-                  setFilters({
-                    search: "",
-                    status: "todas",
-                    paid: "todos",
-                    category: "todas",
-                  })
-                }
+                onClick={() => {
+                  setFilters(defaultFilters);
+                  setDirty(true);
+                }}
               >
                 Limpar filtros
               </Button>
@@ -438,6 +645,7 @@ export default function Home() {
                 <TableHead>Lucro</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Pago</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -481,6 +689,13 @@ export default function Home() {
                       <span className="text-xs text-muted-foreground">{entry.paid ? "Pago" : "Pendente"}</span>
                     </div>
                   </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => handleEditRow(entry)}>
+                        Editar
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -519,17 +734,27 @@ export default function Home() {
                   type="number"
                   placeholder="0,00"
                   value={draft.basePrice}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, basePrice: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      basePrice: event.target.value,
+                      iof: prev.iofTouched ? prev.iof : calculateDefaultIof(event.target.value),
+                    }))
+                  }
+                  required
                 />
               </div>
               <div>
-                <Label>IOF</Label>
+                <Label>IOF (valor)</Label>
                 <Input
                   type="number"
                   placeholder="0,00"
                   value={draft.iof}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, iof: event.target.value }))}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, iof: event.target.value, iofTouched: true }))}
                 />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Padrão: {formatPercent(config.defaultIOFPercent)} do preço base.
+                </p>
               </div>
               <div>
                 <Label>Taxas/alfândega</Label>
@@ -565,6 +790,7 @@ export default function Home() {
                   placeholder="0,00"
                   value={draft.salePrice}
                   onChange={(event) => setDraft((prev) => ({ ...prev, salePrice: event.target.value }))}
+                  required
                 />
               </div>
             </div>
@@ -598,7 +824,10 @@ export default function Home() {
                 id="notes"
                 placeholder="Seguro, condições de entrega, contato do despachante..."
                 value={notes}
-                onChange={(event) => setNotes(event.target.value)}
+                onChange={(event) => {
+                  setNotes(event.target.value);
+                  setDirty(true);
+                }}
               />
             </div>
           </CardContent>
@@ -606,11 +835,13 @@ export default function Home() {
 
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle>Novo lançamento</CardTitle>
-            <CardDescription>Grave uma linha na planilha com todos os custos e status.</CardDescription>
+            <CardTitle>{editingId ? "Editar lançamento" : "Novo lançamento"}</CardTitle>
+            <CardDescription>
+              IOF padrão configurável por projeto e todos os campos continuam editáveis após salvar.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form className="space-y-4" onSubmit={handleAddEntry}>
+            <form className="space-y-4" onSubmit={handleAddOrUpdateEntry}>
               <div className="grid gap-3">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -624,13 +855,12 @@ export default function Home() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="supplier">Fornecedor</Label>
+                    <Label htmlFor="supplier">Fornecedor (opcional)</Label>
                     <Input
                       id="supplier"
                       placeholder="Loja, marketplace..."
                       value={draft.supplier}
                       onChange={(event) => setDraft((prev) => ({ ...prev, supplier: event.target.value }))}
-                      required
                     />
                   </div>
                 </div>
@@ -665,7 +895,7 @@ export default function Home() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="invoice">Invoice/nota</Label>
+                    <Label htmlFor="invoice">Invoice/nota (opcional)</Label>
                     <Input
                       id="invoice"
                       placeholder="INV-0001"
@@ -676,7 +906,7 @@ export default function Home() {
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div>
-                    <Label htmlFor="eta">Entrega/ETA</Label>
+                    <Label htmlFor="eta">Entrega/ETA (opcional)</Label>
                     <Input
                       id="eta"
                       placeholder="dd/mm"
@@ -703,19 +933,30 @@ export default function Home() {
                       type="number"
                       placeholder="0,00"
                       value={draft.basePrice}
-                      onChange={(event) => setDraft((prev) => ({ ...prev, basePrice: event.target.value }))}
+                      onChange={(event) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          basePrice: event.target.value,
+                          iof: prev.iofTouched ? prev.iof : calculateDefaultIof(event.target.value),
+                        }))
+                      }
                       required
                     />
                   </div>
                   <div>
-                    <Label htmlFor="iof">IOF</Label>
+                    <Label htmlFor="iof">IOF (valor)</Label>
                     <Input
                       id="iof"
                       type="number"
                       placeholder="0,00"
                       value={draft.iof}
-                      onChange={(event) => setDraft((prev) => ({ ...prev, iof: event.target.value }))}
+                      onChange={(event) =>
+                        setDraft((prev) => ({ ...prev, iof: event.target.value, iofTouched: true }))
+                      }
                     />
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Padrão do projeto: {formatPercent(config.defaultIOFPercent)}.
+                    </p>
                   </div>
                   <div>
                     <Label htmlFor="duties">Taxas/alfândega</Label>
@@ -755,6 +996,7 @@ export default function Home() {
                       placeholder="0,00"
                       value={draft.salePrice}
                       onChange={(event) => setDraft((prev) => ({ ...prev, salePrice: event.target.value }))}
+                      required
                     />
                   </div>
                 </div>
@@ -767,11 +1009,57 @@ export default function Home() {
                     <span className="font-semibold text-foreground">{currency.format(previewProfit)}</span>
                   </div>
                 </div>
-                <Button type="submit" className="w-full sm:w-auto">
-                  Adicionar à planilha
-                </Button>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  {editingId && (
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      className="w-full sm:w-auto"
+                      onClick={() => {
+                        setEditingId(null);
+                        setDraft(emptyDraft());
+                      }}
+                    >
+                      Cancelar edição
+                    </Button>
+                  )}
+                  <Button type="submit" className="w-full sm:w-auto">
+                    {editingId ? "Salvar alterações" : "Adicionar à planilha"}
+                  </Button>
+                </div>
               </div>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle>Configurações do projeto</CardTitle>
+            <CardDescription>Defaults aplicados em novos itens, mas editáveis linha a linha.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3">
+              <div>
+                <Label htmlFor="defaultIof">IOF padrão (%)</Label>
+                <Input
+                  id="defaultIof"
+                  type="number"
+                  step="0.1"
+                  value={config.defaultIOFPercent}
+                  onChange={(event) => {
+                    setConfig((prev) => ({ ...prev, defaultIOFPercent: Number(event.target.value) || 0 }));
+                    setDirty(true);
+                  }}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Ex: 3,5% (Brasil) aplicado sobre o preço base ao criar um item.
+                </p>
+              </div>
+              <div className="rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                Todos os campos são editáveis depois de salvos. Nome, preço base e preço de venda são obrigatórios;
+                demais são opcionais.
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

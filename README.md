@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Controle de Importações
 
-## Getting Started
+Planilha interativa em Next.js + Tailwind para controlar importações, custos, IOF, transporte e margens. Suporta múltiplos projetos salvos no próprio navegador, configuração de IOF padrão e edição de linhas mesmo depois de salvas.
 
-First, run the development server:
+## Como rodar
 
+1) Garanta que o Node local esteja no PATH (usamos o binário baixado em `.local`):
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+PATH="$PWD/.local/node-v20.11.1-darwin-arm64/bin:$PATH"
 ```
+2) Instale dependências (já feito ao subir este branch, mas execute se precisar):
+```bash
+npm install
+```
+3) Suba o servidor:
+```bash
+PATH="$PWD/.local/node-v20.11.1-darwin-arm64/bin:$PATH" npm run dev
+```
+4) Abra http://localhost:3000.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Fluxo rápido
+- **Projetos**: selecione um existente ou crie um novo (nome livre). Tudo (linhas, filtros, notas, config) fica salvo por projeto.
+- **Salvar**: clique em “Salvar projeto” quando aparecer “Alterações não salvas”. Persistência via `localStorage` do navegador.
+- **Config padrão**: ajuste o IOF padrão (%) em “Configurações do projeto”. Ao digitar um preço base, o IOF é calculado automaticamente com esse percentual; você pode sobrescrever por linha.
+- **Adicionar/editar**: use o formulário. Campos obrigatórios: Item, Preço base, Preço de venda. Os demais são opcionais. Clique em “Editar” na tabela para reabrir uma linha e alterar qualquer campo.
+- **Pagos**: troque o switch na tabela; os totais são recalculados.
+- **Filtros**: busque por item/fornecedor/invoice, filtre por status, pagamento e categoria.
+- **Exportar**: botão “Exportar CSV” gera o arquivo `planilha-importacoes.csv` com todos os campos principais.
+- **Notas**: bloco de notas por projeto (não aparece no CSV, apenas referência interna).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## O que é salvo
+- Itens/linhas com todos os campos, status e flag de pagamento.
+- Configuração de IOF padrão, filtros atuais e notas.
+- Cada projeto fica no `localStorage` da máquina e do navegador em que foi salvo. Limpar cache ou usar outro dispositivo resetará os dados.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Stack
+- Next.js (App Router) + React + TypeScript
+- Tailwind CSS v4 + UI inspirada no shadcn/ui (componentes locais em `src/components/ui/`)
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
