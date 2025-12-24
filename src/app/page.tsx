@@ -39,6 +39,7 @@ type DraftEntry = {
   iofPercent: string;
   taxPercent: string;
   shipping: string;
+  shippingMode: "tier" | "custom";
   status: ImportEntry["status"];
   paid: boolean;
   eta: string;
@@ -282,6 +283,7 @@ function emptyDraft(config: Config = defaultConfig): DraftEntry {
     iofPercent: String(config.defaultIOFPercent),
     taxPercent: String(config.defaultTaxPercent),
     shipping: String(displayShipping),
+    shippingMode: "tier",
     status: statusOptions[0],
     paid: false,
     eta: "",
@@ -597,7 +599,9 @@ export default function Home() {
   const paidRatio = entries.length ? Math.round((paidCount / entries.length) * 100) : 0;
   const shippingOptions = useMemo(() => config.shippingTiers || defaultConfig.shippingTiers, [config.shippingTiers]);
   const shippingOptionsDisplay = useMemo(() => shippingOptions.map((tier) => fromBRL(tier)), [fromBRL, shippingOptions]);
-  const draftShippingInOptions = shippingOptionsDisplay.includes(Number(draft.shipping));
+  const draftShippingInOptions =
+    draft.shippingMode !== "custom" && shippingOptionsDisplay.includes(Number(draft.shipping));
+  const draftShippingSelectValue = draft.shippingMode === "custom" ? "custom" : draft.shipping;
   const handleSaveConfig = async () => {
     if (!currentProjectId) return;
     const normalizedConfig = normalizeConfigDraft(configDraft);
@@ -732,6 +736,7 @@ export default function Home() {
       iofPercent: String(entry.iofPercent),
       taxPercent: String(entry.taxPercent),
       shipping: String(fromBRL(entry.shipping)),
+      shippingMode: shippingOptionsDisplay.includes(Number(fromBRL(entry.shipping))) ? "tier" : "custom",
       status: entry.status,
       paid: entry.paid,
       eta: entry.eta,
@@ -786,10 +791,11 @@ export default function Home() {
 
   useEffect(() => {
     if (editingId) return;
+    if (draft.shippingMode === "custom") return;
     if (!draft.shipping || !draftShippingInOptions) {
       setDraft((prev) => ({ ...prev, shipping: String(shippingOptionsDisplay[0] ?? 0) }));
     }
-  }, [draft.shipping, draftShippingInOptions, shippingOptionsDisplay, editingId]);
+  }, [draft.shipping, draftShippingInOptions, shippingOptionsDisplay, editingId, draft.shippingMode]);
 
   useEffect(() => {
     if (!hydrated || !dirty || !currentProjectId || isSaving || isLoadingProjects) return;
@@ -1255,18 +1261,35 @@ export default function Home() {
               <div>
                 <Label>Transporte</Label>
                 <Select
-                  value={draft.shipping}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, shipping: event.target.value }))}
+                  value={draftShippingSelectValue}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === "custom") {
+                      setDraft((prev) => ({ ...prev, shippingMode: "custom" }));
+                      return;
+                    }
+                    setDraft((prev) => ({ ...prev, shipping: value, shippingMode: "tier" }));
+                  }}
                 >
                   {shippingOptions.map((tier, index) => (
                     <option key={`${tier}-${index}`} value={shippingOptionsDisplay[index]}>
                       Faixa {index + 1} — {formatAmount(tier)}
                     </option>
                   ))}
+                  <option value="custom">Custom</option>
                   {!draftShippingInOptions && (
                     <option value={draft.shipping}>Valor salvo — {formatAmount(toBRL(draft.shipping))}</option>
                   )}
                 </Select>
+                {draft.shippingMode === "custom" && (
+                  <Input
+                    className="mt-2"
+                    type="number"
+                    placeholder="Valor personalizado"
+                    value={draft.shipping}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, shipping: event.target.value }))}
+                  />
+                )}
               </div>
               <div className="flex items-center gap-3 rounded-lg border border-border/70 bg-muted/40 p-3">
                 <Switch checked={draft.taxFree} onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, taxFree: checked }))} />
@@ -1467,20 +1490,37 @@ export default function Home() {
                     <Label htmlFor="shipping">Transporte</Label>
                     <Select
                       id="shipping"
-                      value={draft.shipping}
-                      onChange={(event) => setDraft((prev) => ({ ...prev, shipping: event.target.value }))}
+                      value={draftShippingSelectValue}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value === "custom") {
+                          setDraft((prev) => ({ ...prev, shippingMode: "custom" }));
+                          return;
+                        }
+                        setDraft((prev) => ({ ...prev, shipping: value, shippingMode: "tier" }));
+                      }}
                     >
                       {shippingOptions.map((tier, index) => (
                         <option key={`${tier}-${index}`} value={shippingOptionsDisplay[index]}>
                           Faixa {index + 1} — {formatAmount(tier)}
                         </option>
                       ))}
+                      <option value="custom">Custom</option>
                       {!draftShippingInOptions && (
                         <option value={draft.shipping}>
                           Valor salvo — {formatAmount(toBRL(draft.shipping))}
                         </option>
                       )}
                     </Select>
+                    {draft.shippingMode === "custom" && (
+                      <Input
+                        className="mt-2"
+                        type="number"
+                        placeholder="Valor personalizado"
+                        value={draft.shipping}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, shipping: event.target.value }))}
+                      />
+                    )}
                   </div>
                   <div>
                     <Label>Tax-free</Label>
