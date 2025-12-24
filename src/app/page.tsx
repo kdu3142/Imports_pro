@@ -172,29 +172,31 @@ const initialEntries: ImportEntry[] = [
 const statusOptions: ImportEntry["status"][] = ["A comprar", "Comprado", "Em trânsito", "Entregue"];
 
 function normalizeProject(project: StoredProject): Project {
+  const conversionRate =
+    project.config && "conversionRate" in project.config
+      ? Number((project.config as Config).conversionRate || defaultConfig.conversionRate)
+      : defaultConfig.conversionRate;
+
+  const normalizedShippingTiers: [number, number, number] = (() => {
+    if (project.config && "shippingTiers" in project.config && Array.isArray(project.config.shippingTiers)) {
+      const tiers = (project.config.shippingTiers as number[]).slice(0, 3).map((tier) => Number(tier));
+      if (tiers.length === 3 && tiers.every((tier) => Number.isFinite(tier))) {
+        return [tiers[0], tiers[1], tiers[2]];
+      }
+      return BASE_SHIPPING_TIERS_JPY.map((tier) => tier * conversionRate) as [number, number, number];
+    }
+    return BASE_SHIPPING_TIERS_JPY.map((tier) => tier * defaultConfig.conversionRate) as [number, number, number];
+  })();
+
   const normalizedConfig: Config = {
     ...defaultConfig,
     ...(project.config || {}),
-    conversionRate:
-      project.config && "conversionRate" in project.config
-        ? Number((project.config as Config).conversionRate || defaultConfig.conversionRate)
-        : defaultConfig.conversionRate,
+    conversionRate,
     currencyMode:
       project.config && "currencyMode" in project.config && (project.config as Config).currencyMode === "JPY"
         ? "JPY"
         : "BRL",
-    shippingTiers:
-      project.config && "shippingTiers" in project.config && Array.isArray(project.config.shippingTiers)
-        ? (project.config.shippingTiers as number[]).slice(0, 3).length === 3
-          ? (project.config.shippingTiers as [number, number, number])
-          : BASE_SHIPPING_TIERS_JPY.map(
-              (tier) =>
-                tier *
-                (project.config && "conversionRate" in project.config
-                  ? Number((project.config as Config).conversionRate || defaultConfig.conversionRate)
-                  : defaultConfig.conversionRate),
-            )
-        : BASE_SHIPPING_TIERS_JPY.map((tier) => tier * defaultConfig.conversionRate),
+    shippingTiers: normalizedShippingTiers,
   };
 
   return {
